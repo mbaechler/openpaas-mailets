@@ -494,7 +494,7 @@ public class GuessClassificationMailetTest {
         GuessClassificationMailet testee = new GuessClassificationMailet(new FakeUUIDGenerator());
         testee.init(config);
         // Throws NPE in service method
-        testee.executorService = null;
+
         MemoryAppender memoryAppender = new MemoryAppender();
         ((Logger) GuessClassificationMailet.LOGGER).addAppender(memoryAppender);
         memoryAppender.start();
@@ -512,7 +512,7 @@ public class GuessClassificationMailetTest {
 
         testee.service(mail);
         
-        assertThat(memoryAppender.getEvents()).containsOnly("Exception while calling Classification API");
+        assertThat(memoryAppender.getEvents()).contains("Exception while calling Classification API");
     }
 
     private static class MemoryAppender extends AppenderBase<ILoggingEvent> {

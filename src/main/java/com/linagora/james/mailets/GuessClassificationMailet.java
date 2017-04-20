@@ -21,26 +21,30 @@ package com.linagora.james.mailets;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.security.Principal;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import javax.mail.MessagingException;
 import javax.mail.internet.AddressException;
 
-import org.apache.commons.io.IOUtils;
-import org.apache.http.HttpEntity;
-import org.apache.http.client.methods.HttpPost;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.Credentials;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.fluent.Executor;
+import org.apache.http.client.fluent.Request;
 import org.apache.http.client.utils.URIBuilder;
-import org.apache.http.entity.StringEntity;
+import org.apache.http.entity.ContentType;
+import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.mailet.Mail;
 import org.apache.mailet.MailAddress;
 import org.apache.mailet.MailetException;
@@ -53,9 +57,9 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Charsets;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.primitives.Ints;
 import com.linagora.james.mailets.json.ClassificationGuess;
 import com.linagora.james.mailets.json.ClassificationGuesses;
 import com.linagora.james.mailets.json.ClassificationRequestBodySerializer;
@@ -93,6 +97,7 @@ public class GuessClassificationMailet extends GenericMailet {
 
     @VisibleForTesting static final Logger LOGGER = LoggerFactory.getLogger(GuessClassificationMailet.class);
 
+    static final int DEFAULT_TIME = Ints.checkedCast(TimeUnit.SECONDS.toMillis(30));
     static final String SERVICE_URL = "serviceUrl";
     static final String HEADER_NAME = "headerName";
     static final String TIMEOUT_IN_MS = "timeoutInMs";
@@ -105,7 +110,7 @@ public class GuessClassificationMailet extends GenericMailet {
     @VisibleForTesting Optional<Integer> timeoutInMs;
     private final UUIDGenerator uuidGenerator;
     private final ObjectMapper objectMapper;
-    @VisibleForTesting ExecutorService executorService;
+    private Executor executor;
 
     public GuessClassificationMailet() {
         this(new UUIDGenerator());
@@ -120,10 +125,10 @@ public class GuessClassificationMailet extends GenericMailet {
     @Override
     public void init() throws MessagingException {
         LOGGER.debug("init GuessClassificationMailet");
-        executorService = Executors.newFixedThreadPool(
-            MailetUtil.getInitParameterAsStrictlyPositiveInteger(
+        executor = Executor.newInstance().auth(AuthScope.ANY, new UsernamePasswordCredentials("username", "passord"));
+        int threadCount = MailetUtil.getInitParameterAsStrictlyPositiveInteger(
                 getInitParameter(THREAD_COUNT),
-                THREAD_COUNT_DEFAULT_VALUE));
+                THREAD_COUNT_DEFAULT_VALUE);
 
         timeoutInMs = parseTimeout();
 
@@ -161,43 +166,14 @@ public class GuessClassificationMailet extends GenericMailet {
     @Override
     public void service(Mail mail) throws MessagingException {
         try {
-            Future<Optional<String>> predictionFuture = executorService.submit(() -> getClassificationGuess(mail));
-            awaitTimeout(predictionFuture)
-                .ifPresent(classificationGuess -> addHeaders(mail, classificationGuess));
+            String classificationGuess = executor.execute(
+                    Request.Post(serviceUrlWithQueryParameters(mail.getRecipients()))
+                            .socketTimeout(timeoutInMs.orElse(DEFAULT_TIME))
+                            .bodyString(asJson(mail), ContentType.APPLICATION_JSON))
+                    .returnContent().asString(StandardCharsets.UTF_8);
+            addHeaders(mail, classificationGuess);
         } catch (Exception e) {
             LOGGER.error("Exception while calling Classification API", e);
-        }
-    }
-
-    private Optional<String> awaitTimeout(Future<Optional<String>> objectFuture) {
-        try {
-            if (timeoutInMs.isPresent()) {
-                return objectFuture.get(timeoutInMs.get(), TimeUnit.MILLISECONDS);
-            } else {
-                return objectFuture.get();
-            }
-        } catch (TimeoutException e) {
-            LOGGER.warn("Could not retrieve prediction before timeout of " + timeoutInMs);
-            return Optional.empty();
-        } catch (InterruptedException|ExecutionException e) {
-            LOGGER.error("Could not retrieve prediction", e);
-            return Optional.empty();
-        }
-    }
-
-    private Optional<String> getClassificationGuess(Mail mail) {
-        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
-            HttpPost post = new HttpPost(serviceUrlWithQueryParameters(mail.getRecipients()));
-            post.addHeader("Content-Type", "application/json");
-            post.setEntity(new StringEntity(asJson(mail)));
-            
-            HttpEntity entity = httpClient.execute(post).getEntity();
-            String response = IOUtils.toString(entity.getContent(), Charsets.UTF_8);
-            LOGGER.debug("Response body: " + response);
-            return Optional.ofNullable(response);
-        } catch (Exception e) {
-            LOGGER.error("Error occured while contacting classification guess service", e);
-            return Optional.empty();
         }
     }
 
@@ -215,7 +191,7 @@ public class GuessClassificationMailet extends GenericMailet {
 
     @VisibleForTesting void addHeaders(Mail mail, String classificationGuesses) {
         Optional.ofNullable(classificationGuesses)
-            .map(guesses -> extractClassificationGuessesPart(guesses))
+            .map(this::extractClassificationGuessesPart)
             .orElse(ImmutableMap.of())
             .entrySet()
             .forEach(entry -> addRecipientHeader(mail, entry));

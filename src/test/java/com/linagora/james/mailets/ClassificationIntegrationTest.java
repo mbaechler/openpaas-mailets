@@ -32,6 +32,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import java.util.Base64;
 import org.junit.rules.TemporaryFolder;
 import org.mockserver.client.server.MockServerClient;
 import org.mockserver.junit.MockServerRule;
@@ -154,6 +155,46 @@ public class ClassificationIntegrationTest {
     }
 
     @Test
+    public void classificationShouldCorrectlyAuthenticateToDataRestApi() throws Exception {
+        String recipientTo = "to@" + DEFAULT_DOMAIN;
+        String response = "{\"results\":" +
+            "{\"" + recipientTo + "\":{" +
+            "    \"mailboxId\":\"cfe49390-f391-11e6-88e7-ddd22b16a7b9\"," +
+            "    \"mailboxName\":\"JAMES\"," +
+            "    \"confidence\":50.07615280151367}" +
+            "}," +
+            "\"errors\":{}}";
+        mockServerClient
+            .when(HttpRequest.request()
+                    .withHeader("Authorization", "Basic " + Base64.getEncoder().encodeToString("username:password".getBytes()))
+                    .withMethod("POST")
+                    .withPath("/email/classification/predict")
+                    .withQueryStringParameter(new Parameter("recipients", "to@james.org")),
+                Times.exactly(1))
+            .respond(HttpResponse.response(response));
+
+        DataProbe dataProbe = jamesServer.getProbe(DataProbeImpl.class);
+        dataProbe.addDomain(DEFAULT_DOMAIN);
+        String from = "from@" + DEFAULT_DOMAIN;
+        dataProbe.addUser(from, PASSWORD);
+        dataProbe.addUser(recipientTo, PASSWORD);
+        jamesServer.getProbe(MailboxProbeImpl.class).createMailbox(MailboxConstants.USER_NAMESPACE, recipientTo, "INBOX");
+
+        try (SMTPMessageSender messageSender = SMTPMessageSender.noAuthentication(LOCALHOST_IP, SMTP_PORT, DEFAULT_DOMAIN);
+             IMAPMessageReader imapMessageReader = new IMAPMessageReader(LOCALHOST_IP, IMAP_PORT)) {
+            messageSender.sendMessage(from, recipientTo);
+            calmlyAwait.until(messageSender::messageHasBeenSent);
+            calmlyAwait.until(() -> imapMessageReader.userReceivedMessage(recipientTo, PASSWORD));
+
+            calmlyAwait.until(() -> imapMessageReader.readFirstMessageHeadersInInbox(recipientTo, PASSWORD)
+                .contains("X-Classification-Guess: {" +
+                    "\"mailboxId\":\"cfe49390-f391-11e6-88e7-ddd22b16a7b9\"," +
+                    "\"mailboxName\":\"JAMES\"," +
+                    "\"confidence\":50.07615280151367}"));
+        }
+    }
+
+    @Test
     public void classificationShouldCustomizeMailHeaders() throws Exception {
         String recipientTo = "to@" + DEFAULT_DOMAIN;
         String response = "{\"results\":" +
@@ -218,5 +259,4 @@ public class ClassificationIntegrationTest {
             calmlyAwait.until(() -> imapMessageReader.userReceivedMessage(recipientTo, PASSWORD));
         }
     }
-
 }
