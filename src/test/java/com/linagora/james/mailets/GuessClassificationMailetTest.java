@@ -58,6 +58,7 @@ import ch.qos.logback.core.AppenderBase;
 
 public class GuessClassificationMailetTest {
 
+    public static final String VALID_SERVICE_URL = "https://service.linagora.com";
     @Rule
     public ExpectedException expectedException = ExpectedException.none();
     @Rule
@@ -96,7 +97,7 @@ public class GuessClassificationMailetTest {
         expectedException.expectMessage("'headerName' is mandatory");
 
         FakeMailetConfig config = FakeMailetConfig.builder()
-                .setProperty(GuessClassificationMailet.SERVICE_URL, "my url")
+                .setProperty(GuessClassificationMailet.SERVICE_URL, VALID_SERVICE_URL)
                 .setProperty(GuessClassificationMailet.HEADER_NAME, "")
                 .build();
         
@@ -211,13 +212,13 @@ public class GuessClassificationMailetTest {
     @Test
     public void serviceUrlShouldEqualsPropertyWhenGiven() throws Exception {
         FakeMailetConfig config = FakeMailetConfig.builder()
-                .setProperty(GuessClassificationMailet.SERVICE_URL, "my url")
+                .setProperty(GuessClassificationMailet.SERVICE_URL, VALID_SERVICE_URL)
                 .build();
         
         GuessClassificationMailet testee = new GuessClassificationMailet();
         testee.init(config);
         
-        assertThat(testee.serviceUrl).isEqualTo("my url");
+        assertThat(testee.serviceUrl).isEqualTo(VALID_SERVICE_URL);
     }
 
     @Test
@@ -225,7 +226,7 @@ public class GuessClassificationMailetTest {
         GuessClassificationMailet testee = new GuessClassificationMailet();
 
         testee.init(FakeMailetConfig.builder()
-            .setProperty("serviceUrl", "my url")
+            .setProperty(GuessClassificationMailet.SERVICE_URL, VALID_SERVICE_URL)
             .build());
 
         assertThat(testee.timeoutInMs).isEmpty();
@@ -237,7 +238,7 @@ public class GuessClassificationMailetTest {
 
         int timeout = 10;
         testee.init(FakeMailetConfig.builder()
-            .setProperty("serviceUrl", "my url")
+                .setProperty(GuessClassificationMailet.SERVICE_URL, VALID_SERVICE_URL)
             .setProperty(GuessClassificationMailet.TIMEOUT_IN_MS, String.valueOf(timeout))
             .build());
 
@@ -247,7 +248,7 @@ public class GuessClassificationMailetTest {
     @Test
     public void headerNameShouldEqualsDefaultValueWhenNotGiven() throws Exception {
         FakeMailetConfig config = FakeMailetConfig.builder()
-                .setProperty(GuessClassificationMailet.SERVICE_URL, "my url")
+                .setProperty(GuessClassificationMailet.SERVICE_URL, VALID_SERVICE_URL)
                 .build();
         
         GuessClassificationMailet testee = new GuessClassificationMailet();
@@ -259,7 +260,7 @@ public class GuessClassificationMailetTest {
     @Test
     public void headerNameShouldEqualsPropertyWhenGiven() throws Exception {
         FakeMailetConfig config = FakeMailetConfig.builder()
-                .setProperty(GuessClassificationMailet.SERVICE_URL, "my url")
+                .setProperty(GuessClassificationMailet.SERVICE_URL, VALID_SERVICE_URL)
                 .setProperty(GuessClassificationMailet.HEADER_NAME, "my header")
                 .build();
         
@@ -288,7 +289,7 @@ public class GuessClassificationMailetTest {
     @Test
     public void addHeaderShouldAddHeaderToTheMessage() throws Exception {
         FakeMailetConfig config = FakeMailetConfig.builder()
-                .setProperty(GuessClassificationMailet.SERVICE_URL, "my url")
+                .setProperty(GuessClassificationMailet.SERVICE_URL, VALID_SERVICE_URL)
                 .build();
         GuessClassificationMailet testee = new GuessClassificationMailet();
         testee.init(config);

@@ -125,11 +125,6 @@ public class GuessClassificationMailet extends GenericMailet {
     @Override
     public void init() throws MessagingException {
         LOGGER.debug("init GuessClassificationMailet");
-        executor = Executor.newInstance().auth(AuthScope.ANY, new UsernamePasswordCredentials("username", "passord"));
-        int threadCount = MailetUtil.getInitParameterAsStrictlyPositiveInteger(
-                getInitParameter(THREAD_COUNT),
-                THREAD_COUNT_DEFAULT_VALUE);
-
         timeoutInMs = parseTimeout();
 
         serviceUrl = getInitParameter(SERVICE_URL);
@@ -138,11 +133,26 @@ public class GuessClassificationMailet extends GenericMailet {
             throw new MailetException("'serviceUrl' is mandatory");
         }
 
-        headerName = getInitParameter(HEADER_NAME, HEADER_NAME_DEFAULT_VALUE);
-        LOGGER.debug("headerName value: " + headerName);
-        if (Strings.isNullOrEmpty(headerName)) {
-            throw new MailetException("'headerName' is mandatory");
+        try {
+            String host = new URIBuilder(serviceUrl).getHost();
+            executor = Executor.newInstance()
+                    .authPreemptive(host)
+                    .auth(host, new UsernamePasswordCredentials("username", "passord"));
+            int threadCount = MailetUtil.getInitParameterAsStrictlyPositiveInteger(
+                    getInitParameter(THREAD_COUNT),
+                    THREAD_COUNT_DEFAULT_VALUE);
+
+
+
+            headerName = getInitParameter(HEADER_NAME, HEADER_NAME_DEFAULT_VALUE);
+            LOGGER.debug("headerName value: " + headerName);
+            if (Strings.isNullOrEmpty(headerName)) {
+                throw new MailetException("'headerName' is mandatory");
+            }
+        } catch (URISyntaxException e) {
+            throw new MailetException("invalid 'serviceUrl'", e);
         }
+
     }
 
     private Optional<Integer> parseTimeout() throws MessagingException {
